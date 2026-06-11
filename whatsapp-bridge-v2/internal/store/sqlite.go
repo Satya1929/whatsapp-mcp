@@ -4,12 +4,17 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 
-	_ "github.com/mattn/go-sqlite3"
+	"github.com/glebarez/go-sqlite"
 
 	"github.com/ihiteshgupta/whatsapp-mcp/whatsapp-bridge-v2/internal/state"
 )
+
+func init() {
+	sql.Register("sqlite3", &sqlite.Driver{})
+}
 
 // SQLiteStore implements all repositories using SQLite.
 type SQLiteStore struct {
@@ -23,11 +28,23 @@ type SQLiteStore struct {
 }
 
 // NewSQLiteStore creates a new SQLite-backed store.
-func NewSQLiteStore(dsn string) (*SQLiteStore, error) {
-	db, err := sql.Open("sqlite3", dsn+"?_foreign_keys=on&_journal_mode=WAL")
+func NewSQLiteStore(dsn string, sessionPath string) (*SQLiteStore, error) {
+	db, err := sql.Open("sqlite3", dsn+"?_foreign_keys=on&_journal_mode=WAL&_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)")
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
+
+	if sessionPath != "" && sessionPath != ":memory:" {
+		// Attach the whatsmeow session database to access whatsmeow_contacts and lid_map
+		_, err = db.Exec("ATTACH DATABASE '" + sessionPath + "' AS wa")
+		if err != nil {
+			db.Close()
+			return nil, fmt.Errorf("failed to attach session database: %w", err)
+		}
+	}
+	
+	// Force SQLite to use a single connection so the ATTACH DATABASE is preserved across queries
+	db.SetMaxOpenConns(1)
 
 	// Run migrations
 	if err := runMigrations(db); err != nil {
@@ -222,7 +239,26 @@ func (r *SQLiteMessageRepo) List(ctx context.Context, chatJID string, limit int,
 	}
 	defer rows.Close()
 
-	return scanMessages(rows)
+	messages, err := scanMessages(rows)
+	if err != nil {
+		return nil, err
+	}
+	for i := range messages {
+		if messages[i].IsFromMe {
+			messages[i].SenderName = "Me"
+		} else {
+			name := resolveName(r.db, messages[i].Sender)
+			if name != "" {
+				messages[i].SenderName = name
+			}
+		}
+		
+		chatName := resolveName(r.db, messages[i].ChatJID)
+		if chatName != "" {
+			messages[i].ChatName = chatName
+		}
+	}
+	return messages, nil
 }
 
 func (r *SQLiteMessageRepo) GetByID(ctx context.Context, chatJID, msgID string) (*Message, error) {
@@ -261,7 +297,26 @@ func (r *SQLiteMessageRepo) Search(ctx context.Context, query string, limit int)
 	}
 	defer rows.Close()
 
-	return scanMessages(rows)
+	messages, err := scanMessages(rows)
+	if err != nil {
+		return nil, err
+	}
+	for i := range messages {
+		if messages[i].IsFromMe {
+			messages[i].SenderName = "Me"
+		} else {
+			name := resolveName(r.db, messages[i].Sender)
+			if name != "" {
+				messages[i].SenderName = name
+			}
+		}
+		
+		chatName := resolveName(r.db, messages[i].ChatJID)
+		if chatName != "" {
+			messages[i].ChatName = chatName
+		}
+	}
+	return messages, nil
 }
 
 func (r *SQLiteMessageRepo) SetStarred(ctx context.Context, chatJID, msgID string, starred bool) error {
@@ -336,7 +391,23 @@ func (r *SQLiteChatRepo) List(ctx context.Context, limit int) ([]Chat, error) {
 	}
 	defer rows.Close()
 
-	return scanChats(rows)
+	chats, err := scanChats(rows)
+	if err != nil {
+		return nil, err
+	}
+	for i := range chats {
+		if chats[i].Name == "" {
+			name := resolveName(r.db, chats[i].JID)
+			if name != "" {
+				chats[i].DisplayName = name
+			} else {
+				chats[i].DisplayName = chats[i].JID
+			}
+		} else {
+			chats[i].DisplayName = chats[i].Name
+		}
+	}
+	return chats, nil
 }
 
 func (r *SQLiteChatRepo) GetByJID(ctx context.Context, jid string) (*Chat, error) {
@@ -725,4 +796,81 @@ func (r *SQLiteStateRepo) GetTransitionHistory(ctx context.Context, limit int) (
 		transitions = append(transitions, t)
 	}
 	return transitions, rows.Err()
+}
+
+func resolveName(db *sql.DB, jid string) string {
+	if jid == "" {
+		return ""
+	}
+
+	bareJID := strings.Split(jid, ":")[0]
+	if !strings.Contains(bareJID, "@") && strings.Contains(jid, "@") {
+		parts := strings.Split(jid, "@")
+		if len(parts) == 2 {
+			bareJID = bareJID + "@" + parts[1]
+		}
+	}
+
+	var uid, domain string
+	if strings.Contains(bareJID, "@") {
+		parts := strings.Split(bareJID, "@")
+		uid = parts[0]
+		domain = parts[1]
+	} else {
+		uid = bareJID
+	}
+
+	// 1. Group names
+	if domain == "g.us" {
+		var name string
+		err := db.QueryRow("SELECT name FROM groups WHERE jid = ?", bareJID).Scan(&name)
+		if err == nil && name != "" {
+			return name
+		}
+	}
+
+	// 2. Resolve lid to pn
+	var pn string
+	if domain == "lid" {
+		err := db.QueryRow("SELECT pn FROM wa.whatsmeow_lid_map WHERE lid = ?", uid).Scan(&pn)
+		if err == nil && pn != "" {
+			pn = pn + "@s.whatsapp.net"
+		}
+	} else if domain == "s.whatsapp.net" {
+		pn = bareJID
+	}
+
+	if pn != "" {
+		var full, push, first sql.NullString
+		err := db.QueryRow("SELECT full_name, push_name, first_name FROM wa.whatsmeow_contacts WHERE their_jid = ?", pn).Scan(&full, &push, &first)
+		if err == nil {
+			if full.Valid && full.String != "" {
+				return full.String
+			}
+			if first.Valid && first.String != "" {
+				return first.String
+			}
+			if push.Valid && push.String != "" {
+				return fmt.Sprintf("%s (%s)", strings.Split(pn, "@")[0], push.String)
+			}
+		}
+	}
+
+	if domain == "s.whatsapp.net" {
+		var full, push, first sql.NullString
+		err := db.QueryRow("SELECT full_name, push_name, first_name FROM wa.whatsmeow_contacts WHERE their_jid LIKE ?", uid+"%").Scan(&full, &push, &first)
+		if err == nil {
+			if full.Valid && full.String != "" {
+				return full.String
+			}
+			if first.Valid && first.String != "" {
+				return first.String
+			}
+			if push.Valid && push.String != "" {
+				return fmt.Sprintf("%s (%s)", uid, push.String)
+			}
+		}
+	}
+
+	return ""
 }

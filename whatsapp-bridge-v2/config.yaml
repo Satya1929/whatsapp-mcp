@@ -1,4 +1,5 @@
-# WhatsApp Bridge V2 Configuration
+# WhatsApp Bridge V2 Configuration - Reloaded
+#
 
 # Paths
 session_path: ./store/whatsapp.db

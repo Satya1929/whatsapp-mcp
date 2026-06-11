@@ -264,7 +264,7 @@ func (f *FakeClient) GetSentMessages() []FakeMessage {
 }
 
 func setupTestBridge(t *testing.T) (*Bridge, *FakeClient, *store.SQLiteStore) {
-	storeDB, err := store.NewSQLiteStore(":memory:")
+	storeDB, err := store.NewSQLiteStore(":memory:", "")
 	require.NoError(t, err)
 	t.Cleanup(func() { storeDB.Close() })
 

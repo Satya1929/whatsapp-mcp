@@ -14,7 +14,7 @@ import (
 )
 
 func setupTestHandler(t *testing.T) (*Handler, *store.SQLiteStore) {
-	storeDB, err := store.NewSQLiteStore(":memory:")
+	storeDB, err := store.NewSQLiteStore(":memory:", "")
 	require.NoError(t, err)
 	t.Cleanup(func() { storeDB.Close() })
 

@@ -90,7 +90,7 @@ func main() {
 	}
 
 	// Initialize store
-	storeDB, err := store.NewSQLiteStore(cfg.StorePath)
+	storeDB, err := store.NewSQLiteStore(cfg.StorePath, cfg.SessionPath)
 	if err != nil {
 		logger.Error("Failed to initialize store", "error", err)
 		os.Exit(1)

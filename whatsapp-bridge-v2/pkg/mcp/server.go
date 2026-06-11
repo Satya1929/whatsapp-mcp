@@ -71,7 +71,7 @@ func (s *Server) handleRequest(ctx context.Context, req *Request) error {
 	switch req.Method {
 	case "initialize":
 		return s.handleInitialize(req)
-	case "initialized":
+	case "initialized", "notifications/initialized":
 		// Notification, no response needed
 		s.initialized = true
 		s.log.Info("Client initialized")
@@ -87,6 +87,10 @@ func (s *Server) handleRequest(ctx context.Context, req *Request) error {
 	case "resources/read":
 		return s.handleResourcesRead(req)
 	default:
+		if req.ID == nil {
+			s.log.Warn("Unknown notification received", "method", req.Method)
+			return nil
+		}
 		return s.transport.SendError(req.ID, MethodNotFound, fmt.Sprintf("Unknown method: %s", req.Method), nil)
 	}
 }

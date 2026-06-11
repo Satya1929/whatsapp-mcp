@@ -22,7 +22,7 @@ import (
 	waLog "go.mau.fi/whatsmeow/util/log"
 	"google.golang.org/protobuf/proto"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "github.com/glebarez/go-sqlite"
 
 	"github.com/ihiteshgupta/whatsapp-mcp/whatsapp-bridge-v2/internal/state"
 )
@@ -70,7 +70,7 @@ func NewClient(ctx context.Context, cfg *Config, log *slog.Logger) (*Client, err
 	dbLog := &slogAdapter{log: log.With("component", "whatsmeow-db")}
 
 	// Open database
-	container, err := sqlstore.New(ctx, "sqlite3", fmt.Sprintf("file:%s?_foreign_keys=on", cfg.StorePath), dbLog)
+	container, err := sqlstore.New(ctx, "sqlite3", fmt.Sprintf("file:%s?_foreign_keys=on&_pragma=foreign_keys(1)", cfg.StorePath), dbLog)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}

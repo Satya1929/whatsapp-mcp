@@ -26,6 +26,8 @@ type Message struct {
 	IsStarred    bool      `json:"is_starred"`
 	IsDeleted    bool      `json:"is_deleted"`
 	Reactions    []string  `json:"reactions,omitempty"`
+	SenderName   string    `json:"sender_name,omitempty"`
+	ChatName     string    `json:"chat_name,omitempty"`
 }
 
 // Chat represents a WhatsApp chat.
@@ -40,6 +42,7 @@ type Chat struct {
 	Muted           bool       `json:"muted"`
 	MutedUntil      *time.Time `json:"muted_until,omitempty"`
 	UpdatedAt       time.Time  `json:"updated_at"`
+	DisplayName     string     `json:"display_name,omitempty"`
 }
 
 // Contact represents a WhatsApp contact.

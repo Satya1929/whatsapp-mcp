@@ -754,7 +754,7 @@ func prop(typeName, description string) map[string]interface{} {
 
 func propInt(description string) map[string]interface{} {
 	return map[string]interface{}{
-		"type":        "integer",
+		"type":        "number",
 		"description": description,
 	}
 }
