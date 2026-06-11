@@ -33,3 +33,9 @@ whatsapp-bridge-v2/store/
 .env
 .env.*
 !.env.example
+
+# Windows executables
+*.exe
+
+# Prevent personal config from accidentally being tracked if untracked
+config.yaml

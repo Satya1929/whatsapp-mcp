@@ -1,0 +1,44 @@
+name: Sync Upstream Every Sunday
+
+on:
+  schedule:
+    # Runs every Sunday at midnight UTC
+    - cron: '0 0 * * 0'
+  # Allow manual triggering
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          # Use a PAT if available, otherwise GITHUB_TOKEN
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Add upstream remote
+        run: git remote add upstream https://github.com/ihiteshgupta/whatsapp-mcp.git
+
+      - name: Fetch upstream
+        run: git fetch upstream
+
+      - name: Configure Git User
+        run: |
+          git config user.name "GitHub Actions Bot"
+          git config user.email "actions@github.com"
+
+      - name: Merge upstream/main into main
+        id: merge
+        run: |
+          # Try to merge without opening an editor
+          git merge upstream/main --no-edit || exit 1
+          
+      - name: Push changes
+        if: success()
+        run: git push origin main
+
+      # If the merge step fails (exit code 1), the workflow fails.
+      # GitHub Actions will natively send an email notification to the repository owner
+      # (Satya1929) informing them of the failure (merge conflict).
