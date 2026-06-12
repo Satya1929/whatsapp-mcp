@@ -25,7 +25,8 @@ func main() {
 
 	realExePath := filepath.Join(exeDir, "whatsapp-mcp-real.exe")
 	cmd := exec.Command(realExePath, os.Args[1:]...)
-	
+	cmd.Dir = exeDir
+
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		log.Fatal(err)
@@ -34,7 +35,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	
+
 	cmd.Stderr = os.Stderr // Pass stderr through
 
 	if err := cmd.Start(); err != nil {
